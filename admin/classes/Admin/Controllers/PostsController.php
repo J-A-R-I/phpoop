@@ -29,7 +29,16 @@ final class PostsController
     {
         $old = Flash::get('old');
         if (!is_array($old)) {
-            $old = ['title' => '', 'content' => '', 'status' => 'draft', 'slug' => '', 'featured_media_id' => ''];
+            $old = [
+                'title' => '',
+                'content' => '',
+                'status' => 'draft',
+                'slug' => '',
+                'featured_media_id' => '',
+                'published_at' => '',
+                'meta_title' => '',
+                'meta_description' => ''
+            ];
         }
 
         View::render('post-create.php', [
@@ -45,7 +54,6 @@ final class PostsController
         $content = trim((string)($_POST['content'] ?? ''));
         $status  = (string)($_POST['status'] ?? 'draft');
 
-        // Slug logica
         $rawSlug = trim((string)($_POST['slug'] ?? ''));
         if ($rawSlug === '') {
             $rawSlug = $title;
@@ -55,22 +63,35 @@ final class PostsController
         $featuredRaw = trim((string)($_POST['featured_media_id'] ?? ''));
         $featuredId = $this->normalizeFeaturedId($featuredRaw);
 
-        // Validatie (Nu met speciale tekens check)
-        $errors = $this->validate($title, $content, $status, $featuredId);
+        $publishedAtRaw = trim((string)($_POST['published_at'] ?? ''));
+        $publishedAt = $publishedAtRaw !== '' ? $publishedAtRaw : null;
 
-        // Check op dubbele slug (Extra veiligheid)
+        $metaTitle = trim((string)($_POST['meta_title'] ?? ''));
+        $metaTitle = $metaTitle !== '' ? $metaTitle : null;
+
+        $metaDesc = trim((string)($_POST['meta_description'] ?? ''));
+        $metaDesc = $metaDesc !== '' ? $metaDesc : null;
+
+        $errors = $this->validate($title, $content, $status, $featuredId);
+        $errors = array_merge($errors, $this->validateSeoAndScheduling($metaDesc, $publishedAt));
+
         if (empty($errors) && $this->posts->findBySlug($slug)) {
             $errors[] = "De gegenereerde URL '$slug' bestaat al. Kies een andere titel.";
         }
 
         if (!empty($errors)) {
             Flash::set('warning', $errors);
-            Flash::set('old', compact('title', 'content', 'status', 'slug') + ['featured_media_id' => $featuredRaw]);
+            Flash::set('old', compact('title', 'content', 'status', 'slug') + [
+                'featured_media_id' => $featuredRaw,
+                'published_at' => $publishedAtRaw,
+                'meta_title' => $metaTitle,
+                'meta_description' => $metaDesc
+            ]);
             header('Location: ' . ADMIN_BASE_PATH . '/posts/create');
             exit;
         }
 
-        $this->posts->create($title, $content, $status, $slug, $featuredId);
+        $this->posts->create($title, $content, $status, $slug, $featuredId, $publishedAt, $metaTitle, $metaDesc);
 
         Flash::set('success', 'Post succesvol aangemaakt.');
         header('Location: ' . ADMIN_BASE_PATH . '/posts');
@@ -90,12 +111,23 @@ final class PostsController
 
         $old = Flash::get('old');
         if (!is_array($old)) {
+            $publishedAtValue = $post['published_at'] ?? null;
+            if ($publishedAtValue && $publishedAtValue !== '0000-00-00 00:00:00') {
+                $dt = new \DateTime($publishedAtValue);
+                $publishedAtFormatted = $dt->format('Y-m-d\TH:i');
+            } else {
+                $publishedAtFormatted = '';
+            }
+
             $old = [
                 'title' => (string)$post['title'],
                 'content' => (string)$post['content'],
                 'status' => (string)$post['status'],
                 'slug' => (string)($post['slug'] ?? ''),
                 'featured_media_id' => (string)($post['featured_media_id'] ?? ''),
+                'published_at' => $publishedAtFormatted,
+                'meta_title' => (string)($post['meta_title'] ?? ''),
+                'meta_description' => (string)($post['meta_description'] ?? ''),
             ];
         }
 
@@ -135,7 +167,17 @@ final class PostsController
         $featuredRaw = trim((string)($_POST['featured_media_id'] ?? ''));
         $featuredId = $this->normalizeFeaturedId($featuredRaw);
 
+        $publishedAtRaw = trim((string)($_POST['published_at'] ?? ''));
+        $publishedAt = $publishedAtRaw !== '' ? $publishedAtRaw : null;
+
+        $metaTitle = trim((string)($_POST['meta_title'] ?? ''));
+        $metaTitle = $metaTitle !== '' ? $metaTitle : null;
+
+        $metaDesc = trim((string)($_POST['meta_description'] ?? ''));
+        $metaDesc = $metaDesc !== '' ? $metaDesc : null;
+
         $errors = $this->validate($title, $content, $status, $featuredId);
+        $errors = array_merge($errors, $this->validateSeoAndScheduling($metaDesc, $publishedAt));
 
         // Check op dubbele slug bij update
         if (empty($errors)) {
@@ -147,13 +189,18 @@ final class PostsController
 
         if (!empty($errors)) {
             Flash::set('warning', $errors);
-            Flash::set('old', compact('title', 'content', 'status') + ['slug' => $newSlug, 'featured_media_id' => $featuredRaw]);
-            // Terug naar de huidige (oude) slug URL
+            Flash::set('old', compact('title', 'content', 'status') + [
+                'slug' => $newSlug,
+                'featured_media_id' => $featuredRaw,
+                'published_at' => $publishedAtRaw,
+                'meta_title' => $metaTitle,
+                'meta_description' => $metaDesc
+            ]);
             header('Location: ' . ADMIN_BASE_PATH . '/posts/' . urlencode($currentSlug) . '/edit');
             exit;
         }
 
-        $this->posts->update($id, $title, $content, $status, $newSlug, $featuredId);
+        $this->posts->update($id, $title, $content, $status, $newSlug, $featuredId, $publishedAt, $metaTitle, $metaDesc);
 
         Flash::set('success', 'Post succesvol aangepast.');
         header('Location: ' . ADMIN_BASE_PATH . '/posts');
@@ -180,9 +227,19 @@ final class PostsController
     public function delete(string $slug): void
     {
         $slug = urldecode($slug);
-        $this->posts->deleteBySlug($slug);
+        $this->posts->softDeleteBySlug($slug);
 
-        Flash::set('success', 'Post verwijderd.');
+        Flash::set('success', 'Post verplaatst naar prullenbak.');
+        header('Location: ' . ADMIN_BASE_PATH . '/posts');
+        exit;
+    }
+
+    public function restore(string $slug): void
+    {
+        $slug = urldecode($slug);
+        $this->posts->restoreBySlug($slug);
+
+        Flash::set('success', 'Post hersteld.');
         header('Location: ' . ADMIN_BASE_PATH . '/posts');
         exit;
     }
@@ -247,6 +304,24 @@ final class PostsController
 
         if ($featuredId !== null && MediaRepository::make()->findImageById($featuredId) === null) {
             $errors[] = 'Featured image is ongeldig.';
+        }
+
+        return $errors;
+    }
+
+    private function validateSeoAndScheduling(?string $metaDesc, ?string $publishedAt): array
+    {
+        $errors = [];
+
+        if ($metaDesc !== null && mb_strlen($metaDesc) > 160) {
+            $errors[] = 'Meta beschrijving mag maximaal 160 tekens bevatten.';
+        }
+
+        if ($publishedAt !== null && $publishedAt !== '') {
+            $timestamp = strtotime($publishedAt);
+            if ($timestamp === false) {
+                $errors[] = 'Ongeldige publicatiedatum.';
+            }
         }
 
         return $errors;

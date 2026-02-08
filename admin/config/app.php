@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Hier definiëren we het pad waaronder de admin bereikbaar is.
  *
  * In onze vhost setup:
- * https://minicms.test/admin
+ * https://minicms.com/admin
  */
 define('ADMIN_BASE_PATH', '/admin');
 

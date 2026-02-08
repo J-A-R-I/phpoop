@@ -1,10 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Start de PHP session.
- * Zonder dit werkt $_SESSION niet.
- */
 session_start();
 
 require __DIR__ . '/config/app.php';
@@ -15,6 +11,7 @@ use Admin\Controllers\DashboardController;
 use Admin\Controllers\ErrorController;
 use Admin\Controllers\MediaController;
 use Admin\Controllers\PostsController;
+use Admin\Controllers\RolesController;
 use Admin\Controllers\UsersController;
 use Admin\Core\Auth;
 use Admin\Core\Router;
@@ -37,9 +34,16 @@ $uri = rtrim($uri, '/') ?: '/';
 
 /**
  * Beveilig admin-routes:
- * als je niet ingelogd bent, ga naar /login
  */
-$publicRoutes = ['/login'];
+$publicRoutes = [
+    '/login',
+    '/login/github',
+    '/login/discord',
+    '/login/google',
+    '/login/github/callback',
+    '/login/discord/callback',
+    '/login/google/callback'
+];
 
 if (!Auth::check() && !in_array($uri, $publicRoutes, true)) {
     header('Location: ' . ADMIN_BASE_PATH . '/login');
@@ -49,19 +53,12 @@ if (!Auth::check() && !in_array($uri, $publicRoutes, true)) {
 $method = $_SERVER['REQUEST_METHOD'];
 
 $router = new Router();
-
-/**
- * setNotFoundHandler()
- */
 $errorController = new ErrorController();
 
 $router->setNotFoundHandler(function (string $requestedUri) use ($errorController): void {
     $errorController->notFound($requestedUri);
 });
 
-/**
- * Admin-only guard helper
- */
 $requireAdmin = function () use ($errorController): void {
     if (!Auth::isAdmin()) {
         $errorController->forbidden('Admin rechten vereist.');
@@ -87,8 +84,18 @@ $router->post('/login', function (): void {
     (new AuthController(UsersRepository::make()))->login();
 });
 
-$router->post('/logout', function (): void {
+// AANGEPAST: Dit was POST, nu GET zodat de sidebar link werkt
+$router->get('/logout', function (): void {
     (new AuthController(UsersRepository::make()))->logout();
+});
+
+// Social Login
+$router->get('/login/{provider}', function (string $provider): void {
+    (new AuthController(UsersRepository::make()))->loginViaProvider($provider);
+});
+
+$router->get('/login/{provider}/callback', function (string $provider): void {
+    (new AuthController(UsersRepository::make()))->callbackProvider($provider);
 });
 
 /**
@@ -134,6 +141,11 @@ $router->post('/users/{id}/enable', function (int $id) use ($requireAdmin): void
     (new UsersController(UsersRepository::make(), RolesRepository::make()))->enable($id);
 });
 
+$router->get('/roles', function () use ($requireAdmin): void {
+    $requireAdmin();
+    (new RolesController(RolesRepository::make()))->index();
+});
+
 /**
  * Posts
  */
@@ -149,12 +161,10 @@ $router->post('/posts/store', function (): void {
     (new PostsController(PostsRepository::make()))->store();
 });
 
-// Aangepast: {slug} ipv {id}, verwacht string
 $router->get('/posts/{slug}/edit', function (string $slug): void {
     (new PostsController(PostsRepository::make()))->edit($slug);
 });
 
-// Aangepast: {slug} ipv {id}, verwacht string
 $router->post('/posts/{slug}/update', function (string $slug): void {
     (new PostsController(PostsRepository::make()))->update($slug);
 });
@@ -162,19 +172,21 @@ $router->post('/posts/{slug}/update', function (string $slug): void {
 /**
  * Delete routes (admin-only)
  */
-// Aangepast: {slug} ipv {id}, verwacht string
 $router->get('/posts/{slug}/delete', function (string $slug) use ($requireAdmin): void {
     $requireAdmin();
     (new PostsController(PostsRepository::make()))->deleteConfirm($slug);
 });
 
-// Aangepast: {slug} ipv {id}, verwacht string
 $router->post('/posts/{slug}/delete', function (string $slug) use ($requireAdmin): void {
     $requireAdmin();
     (new PostsController(PostsRepository::make()))->delete($slug);
 });
 
-// Aangepast: {slug} ipv {id}, verwacht string
+$router->post('/posts/{slug}/restore', function (string $slug) use ($requireAdmin): void {
+    $requireAdmin();
+    (new PostsController(PostsRepository::make()))->restore($slug);
+});
+
 $router->get('/posts/{slug}', function (string $slug): void {
     (new PostsController(PostsRepository::make()))->show($slug);
 });

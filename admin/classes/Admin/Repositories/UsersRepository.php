@@ -5,6 +5,7 @@ namespace Admin\Repositories;
 
 use Admin\Core\Database;
 use PDO;
+use Exception;
 
 class UsersRepository
 {
@@ -158,6 +159,97 @@ class UsersRepository
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute(['id' => $id]);
+    }
+
+    // --- NIEUWE METHODES VOOR OAUTH (Github/Google) ---
+
+    /**
+     * findOrCreateByProvider()
+     * Doel: Zoek gebruiker via provider-link. Bestaat die niet? Maak of link dan.
+     */
+    public function findOrCreateByProvider(string $provider, string $providerId, string $email, string $name): array
+    {
+        // 1. Check of deze connectie al bestaat in auth_connections
+        // We joinen meteen de user en role info erbij voor de sessie
+        $stmt = $this->pdo->prepare("
+            SELECT u.*, r.name as role_name 
+            FROM users u
+            JOIN auth_connections a ON u.id = a.user_id
+            JOIN roles r ON u.role_id = r.id
+            WHERE a.provider = :provider 
+            AND a.provider_id = :provider_id
+            LIMIT 1
+        ");
+
+        $stmt->execute([
+            ':provider'    => $provider,
+            ':provider_id' => $providerId
+        ]);
+
+        $user = $stmt->fetch();
+
+        if ($user) {
+            return $user; // Bestaande gebruiker gevonden via social login
+        }
+
+        // 2. Geen connectie? Check of e-mail al bestaat (account linking) of maak nieuw
+        return $this->linkOrCreateUser($provider, $providerId, $email, $name);
+    }
+
+    /**
+     * linkOrCreateUser()
+     * Doel: Koppelt een OAuth account aan een bestaande of nieuwe user.
+     * Gebruikt transacties om dataconsistentie te garanderen.
+     */
+    private function linkOrCreateUser(string $provider, string $providerId, string $email, string $name): array
+    {
+        try {
+            $this->pdo->beginTransaction();
+
+            // Stap A: Zoek user op email
+            $stmt = $this->pdo->prepare("SELECT id FROM users WHERE email = :email");
+            $stmt->execute([':email' => $email]);
+            $existingUser = $stmt->fetch();
+
+            if ($existingUser) {
+                // User bestaat al -> we gaan koppelen
+                $userId = (int)$existingUser['id'];
+            } else {
+                // User bestaat niet -> aanmaken
+                // We gebruiken role_id = 2 (standaard user). Pas dit aan indien nodig.
+                // Password hash is NULL omdat ze via social login komen.
+                $stmt = $this->pdo->prepare("
+                    INSERT INTO users (email, name, role_id, is_active, created_at) 
+                    VALUES (:email, :name, 2, 1, NOW())
+                ");
+                $stmt->execute([
+                    ':email' => $email,
+                    ':name'  => $name
+                ]);
+                $userId = (int)$this->pdo->lastInsertId();
+            }
+
+            // Stap B: Link toevoegen in auth_connections tabel
+            $stmt = $this->pdo->prepare("
+                INSERT INTO auth_connections (user_id, provider, provider_id, created_at)
+                VALUES (:user_id, :provider, :provider_id, NOW())
+            ");
+
+            $stmt->execute([
+                ':user_id'     => $userId,
+                ':provider'    => $provider,
+                ':provider_id' => $providerId
+            ]);
+
+            $this->pdo->commit();
+
+            // Stap C: Haal de volledige user op om direct in te loggen
+            return $this->findById($userId);
+
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 
     public static function make(): self

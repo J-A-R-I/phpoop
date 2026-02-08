@@ -60,5 +60,10 @@ function sidebarLinkClass(bool $active): string
            class="block rounded px-3 py-2 text-slate-400 hover:text-white">
             Naar site
         </a>
+
+        <a href="<?= ADMIN_BASE_PATH ?>/logout"
+           class="block rounded px-3 py-2 text-red-400 hover:text-white">
+            logout
+        </a>
     </nav>
 </aside>

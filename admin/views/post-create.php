@@ -48,6 +48,34 @@ declare(strict_types=1);
                 </select>
             </div>
 
+            <div>
+                <label class="block text-sm font-semibold mb-1">Publicatiedatum (optioneel)</label>
+                <input class="w-full border rounded px-3 py-2"
+                       type="datetime-local"
+                       name="published_at"
+                       value="<?= htmlspecialchars((string)($old['published_at'] ?? ''), ENT_QUOTES) ?>">
+                <p class="text-xs text-gray-500 mt-1">Laat leeg voor directe publicatie</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1">SEO Titel (optioneel)</label>
+                <input class="w-full border rounded px-3 py-2"
+                       type="text"
+                       name="meta_title"
+                       maxlength="60"
+                       value="<?= htmlspecialchars((string)($old['meta_title'] ?? ''), ENT_QUOTES) ?>">
+                <p class="text-xs text-gray-500 mt-1">Laat leeg om post titel te gebruiken</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1">SEO Beschrijving (optioneel)</label>
+                <textarea class="w-full border rounded px-3 py-2"
+                          name="meta_description"
+                          rows="3"
+                          maxlength="160"><?= htmlspecialchars((string)($old['meta_description'] ?? ''), ENT_QUOTES) ?></textarea>
+                <p class="text-xs text-gray-500 mt-1">Maximaal 160 tekens</p>
+            </div>
+
             <div class="flex gap-3">
                 <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700" type="submit">
                     Opslaan

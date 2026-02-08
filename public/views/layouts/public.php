@@ -17,10 +17,15 @@ declare(strict_types=1);
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <!-- Title veilig tonen -->
-    <title><?= htmlspecialchars($title ?? 'MiniCMS') ?></title>
+    <?php
+    $pageTitle = $metaTitle ?? $title ?? 'MiniCMS';
+    ?>
+    <title><?= htmlspecialchars($pageTitle) ?></title>
 
-    <!-- Tailwind via CDN -->
+    <?php if (isset($metaDescription) && $metaDescription !== ''): ?>
+    <meta name="description" content="<?= htmlspecialchars($metaDescription) ?>">
+    <?php endif; ?>
+
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
